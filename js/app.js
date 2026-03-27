@@ -252,73 +252,57 @@ function calculateOptimalDocCost(docType, amount, totalAmountForTier) {
     const packages = state.tariffs.document_packages[docType] || [];
     const brackets = state.tariffs.piece_rate_brackets;
     let rateKey = docType === 'waybills' ? 'ettn' : docType;
-    let pieceRate = 0;
-    
-    for (const bracket of brackets) {
-        if (totalAmountForTier >= bracket.min && totalAmountForTier <= bracket.max) {
-            pieceRate = bracket.rates[rateKey] || 0;
-            break;
-        }
-    }
-    if (pieceRate === 0 && brackets.length > 0) {
-        pieceRate = brackets[brackets.length - 1].rates[rateKey] || 0;
-    }
 
-    // DP Knapsack exactly >= amount
-    let maxPkgSize = packages.length > 0 ? Math.max(...packages.map(p => p.amount)) : 0;
-    let limit = amount + maxPkgSize;
-    let dp = new Array(limit + 1).fill(Infinity);
-    let choice = new Array(limit + 1).fill(null); 
+    // Helper: Progressive piece rate calculation
+    const getPiecesCost = (qty) => {
+        if (qty <= 0) return 0;
+        let cost = 0;
+        let remaining = qty;
+        
+        for (const bracket of brackets) {
+            const bracketSize = bracket.max - bracket.min + 1;
+            const applicable = Math.min(remaining, bracketSize);
+            const rate = bracket.rates[rateKey] || 0;
+            
+            cost += applicable * rate;
+            remaining -= applicable;
+            if (remaining <= 0) break;
+        }
+        
+        // Handle overflow if any
+        if (remaining > 0) {
+            const lastRate = brackets[brackets.length - 1].rates[rateKey] || 0;
+            cost += remaining * lastRate;
+        }
+        return cost;
+    };
+
+    // Optimization logic: Try all package combinations
+    // Since packages are small in count, we can do a simple recursive or iterative approach
+    const sortedPkgs = [...packages].sort((a, b) => b.amount - a.amount);
     
-    dp[0] = 0;
-    const items = [...packages];
-    items.push({ amount: 1, price: pieceRate, isPiece: true });
-    
-    for (let i = 0; i <= limit; i++) {
-        if (dp[i] === Infinity) continue;
-        for (const item of items) {
-            let nextSize = i + item.amount;
-            if (nextSize > limit) nextSize = limit;
-            if (dp[i] + item.price < dp[nextSize]) {
-                dp[nextSize] = dp[i] + item.price;
-                choice[nextSize] = { prev: i, item: item };
+    let bestResult = { cost: getPiecesCost(amount), desc: `${amount} шт (поштучно)` };
+
+    // Simple combinations: try taking N of each package
+    // For performance, we limit to reasonable counts
+    for (const pkg of sortedPkgs) {
+        // Option: Take one or more of this package
+        for (let count = 1; count <= Math.ceil(amount / pkg.amount); count++) {
+            let pkgTotalAmt = count * pkg.amount;
+            let pkgTotalCost = count * pkg.price;
+            let remaining = Math.max(0, amount - pkgTotalAmt);
+            let total = pkgTotalCost + getPiecesCost(remaining);
+            
+            if (total < bestResult.cost) {
+                bestResult = {
+                    cost: total,
+                    desc: `${count}x${pkg.amount}шт + ${remaining} поштучно`
+                };
             }
         }
     }
-    
-    let minCost = Infinity;
-    let bestSize = amount;
-    for (let i = amount; i <= limit; i++) {
-        if (dp[i] < minCost) {
-            minCost = dp[i];
-            bestSize = i;
-        }
-    }
-    
-    let curr = bestSize;
-    let counts = {};
-    let pieceCount = 0;
-    
-    while (curr > 0 && choice[curr]) {
-        const item = choice[curr].item;
-        if (item.isPiece) {
-            pieceCount++;
-        } else {
-            counts[item.amount] = (counts[item.amount] || 0) + 1;
-        }
-        curr = choice[curr].prev;
-    }
-    
-    let descParts = [];
-    for (const [size, count] of Object.entries(counts)) {
-        descParts.push(`${count}x${size}шт`);
-    }
-    if (pieceCount > 0) descParts.push(`${pieceCount}шт по ${pieceRate}`);
-    
-    return {
-        cost: minCost,
-        desc: descParts.join(' + ') || 'Включено'
-    };
+
+    return bestResult;
 }
 
 function updateCalculations() {
