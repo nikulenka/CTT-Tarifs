@@ -21,12 +21,38 @@ const formatPrice = (price) => parseFloat(price).toFixed(2);
 
 document.addEventListener('DOMContentLoaded', initApp);
 
+// Global error handler for better diagnostics
+window.onerror = function(message, source, lineno, colno, error) {
+    const loadingElem = document.getElementById('loading');
+    if (loadingElem) {
+        loadingElem.innerHTML = `<p style="color:red; background:white; padding:10px; border:2px solid red;">
+            <b>Критическая ошибка JS:</b><br>${message}<br>
+            <small>Line: ${lineno}, Col: ${colno}</small>
+        </p>`;
+    }
+    return false;
+};
+
 async function initApp() {
+    console.log("Initializing app...");
+    const loadingElem = document.getElementById('loading');
+    
     try {
+        console.log("Fetching ctt_tariffs.json...");
         const response = await fetch('ctt_tariffs.json');
-        if (!response.ok) throw new Error('Failed to load tariffs configuration json.');
-        state.tariffs = await response.json();
         
+        if (!response.ok) {
+            throw new Error(`Не удалось загрузить ctt_tariffs.json (Статус: ${response.status}). 
+            Убедитесь, что файл находится в той же папке и вы используете локальный сервер (CORS).`);
+        }
+        
+        state.tariffs = await response.json();
+        console.log("Tariffs loaded:", state.tariffs);
+        
+        if (!state.tariffs.base_plans) {
+            throw new Error("Неверная структура JSON: отсутствует поле base_plans.");
+        }
+
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('app').classList.remove('hidden');
         document.getElementById('vat-notice').textContent = state.tariffs.meta.vat_notice;
@@ -35,9 +61,17 @@ async function initApp() {
         renderPlans();
         renderAddons();
         updateCalculations();
+        console.log("App ready.");
     } catch (err) {
-        console.error(err);
-        document.getElementById('loading').innerHTML = `<p style="color:red;">Ошибка загрузки конфигурации тарифов.</p>`;
+        console.error("Initialization error:", err);
+        loadingElem.innerHTML = `<div style="color:red; background:white; padding:20px; border:1px solid red; border-radius:8px; max-width:400px; text-align:left;">
+            <h3 style="margin-top:0">Ошибка инициализации</h3>
+            <p>${err.message}</p>
+            <p style="font-size:0.8rem; color:#666; margin-top:10px;">
+                <b>Подсказка:</b> Если вы открываете файл напрямую (через двойной клик), 
+                браузер может блокировать загрузку данных. Используйте VS Code Live Server или другой веб-сервер.
+            </p>
+        </div>`;
     }
 }
 
@@ -387,13 +421,13 @@ function updateCalculations() {
     
     // UI Update
     document.getElementById('total-price').textContent = formatPrice(grandTotal);
-    document.getElementById('price-notice').textContent = \`за \${state.period === 'year' ? 'год' : 'месяц'}, без НДС\`;
+    document.getElementById('price-notice').textContent = `за ${state.period === 'year' ? 'год' : 'месяц'}, без НДС`;
     
     const breakdownHTML = breakdown.map(item => {
         if (item.name.includes('<br>')) {
-           return \`<div class="item" style="border-top:2px solid #e2e8f0; margin-top:10px;"><span class="item-name">\${item.name}</span><span class="item-price">\${formatPrice(item.price)} BYN</span></div>\`;
+           return `<div class="item" style="border-top:2px solid #e2e8f0; margin-top:10px;"><span class="item-name">${item.name}</span><span class="item-price">${formatPrice(item.price)} BYN</span></div>`;
         }
-        return \`<div class="item"><span class="item-name">\${item.name}</span><span class="item-price">\${formatPrice(item.price)} BYN</span></div>\`;
+        return `<div class="item"><span class="item-name">${item.name}</span><span class="item-price">${formatPrice(item.price)} BYN</span></div>`;
     }).join('');
     
     document.getElementById('breakdown-list').innerHTML = breakdownHTML;
