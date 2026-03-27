@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTT.BY - Калькулятор тарифов</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="calculator-container">
+        <header class="calc-header">
+            <h1>Калькулятор тарифов CTT.BY</h1>
+            <p>Выберите оптимальный тарифный план и настройте услуги под ваши бизнес-задачи.</p>
+        </header>
+        
+        <div id="loading" class="loading-overlay">
+            <div class="spinner"></div>
+            <p>Загрузка тарифов...</p>
+        </div>
+
+        <main id="app" class="hidden">
+            <!-- Left Column: Settings & Options -->
+            <div class="calc-settings">
+                
+                <!-- Client Type & Billing Cycle -->
+                <section class="calc-section general-settings">
+                    <div class="setting-group">
+                        <label>Оплата за:</label>
+                        <div class="radio-switcher">
+                            <input type="radio" id="period-month" name="period" value="month">
+                            <label for="period-month">Месяц</label>
+                            
+                            <input type="radio" id="period-year" name="period" value="year" checked>
+                            <label for="period-year">Год <span class="badge promo">Скидка до 60%</span></label>
+                        </div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label>Статус клиента:</label>
+                        <div class="radio-switcher">
+                            <input type="radio" id="client-new" name="client_type" value="new" checked>
+                            <label for="client-new">Новый клиент</label>
+                            
+                            <input type="radio" id="client-existing" name="client_type" value="existing">
+                            <label for="client-existing">Действующий</label>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Base Plans -->
+                <section class="calc-section plans-section">
+                    <h2>1. Тарифный план</h2>
+                    <div id="plans-container" class="plans-grid">
+                        <!-- Plans injected by JS -->
+                    </div>
+                </section>
+
+                <!-- Document Volumes -->
+                <section class="calc-section docs-section">
+                    <h2>2. Объем документов в месяц</h2>
+                    <div class="sliders-container">
+                        
+                        <div class="slider-group">
+                            <div class="slider-header">
+                                <label for="docs-waybills">Электронные накладные (эТТН/эТН)</label>
+                                <div class="slider-value"><input type="number" id="input-waybills" min="0" value="0"> шт</div>
+                            </div>
+                            <input type="range" id="slider-waybills" min="0" max="5000" step="50" value="0">
+                        </div>
+
+                        <div class="slider-group">
+                            <div class="slider-header">
+                                <label for="docs-edi">EDI-сообщения</label>
+                                <div class="slider-value"><input type="number" id="input-edi" min="0" value="0"> шт</div>
+                            </div>
+                            <input type="range" id="slider-edi" min="0" max="5000" step="50" value="0">
+                        </div>
+
+                        <div class="slider-group">
+                            <div class="slider-header">
+                                <label for="docs-yuzdo">ЮЗДО (Акты, договоры и др.)</label>
+                                <div class="slider-value"><input type="number" id="input-yuzdo" min="0" value="0"> шт</div>
+                            </div>
+                            <input type="range" id="slider-yuzdo" min="0" max="5000" step="50" value="0">
+                        </div>
+
+                    </div>
+                </section>
+
+                <!-- Addons & Services -->
+                <section class="calc-section addons-section">
+                    <h2>3. Дополнительные опции</h2>
+                    <div class="addons-grid" id="addons-container">
+                        <!-- Addons injected by JS -->
+                    </div>
+                </section>
+
+            </div>
+
+            <!-- Right Column: Sticky Summary -->
+            <div class="calc-summary">
+                <div class="summary-card sticky">
+                    <h2>Итого к оплате</h2>
+                    
+                    <div class="total-price-block">
+                        <div class="price-value"><span id="total-price">0.00</span> BYN</div>
+                        <div class="price-notice" id="price-notice">за год, без НДС</div>
+                    </div>
+
+                    <div class="breakdown-list" id="breakdown-list">
+                        <!-- Breakdown items injected by JS -->
+                    </div>
+
+                    <button id="btn-export" class="btn-primary">
+                        <svg viewBox="0 0 24 24" fill="none" class="icon"><path d="M12 15V3m0 12l-4-4m4 4l4-4M2 17l.621 2.485A2 2 0 0 0 4.561 21h14.878a2 2 0 0 0 1.94-1.515L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Скачать PDF-расчет
+                    </button>
+                    
+                    <div class="vat-notice" id="vat-notice">без НДС в соответствии с нормами Положения о ПВТ</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- html2pdf for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

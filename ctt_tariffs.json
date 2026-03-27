@@ -1,0 +1,348 @@
+{
+    "meta": {
+        "currency": "BYN",
+        "vat": 0,
+        "vat_notice": "без НДС в соответствии с нормами Положения о ПВТ"
+    },
+    "base_plans": {
+        "basic": {
+            "name": "Базовый",
+            "price_month": 24.00,
+            "price_year": 288.00,
+            "price_year_promo": 288.00,
+            "included": {
+                "waybills": 0,
+                "yuzdo": 0
+            },
+            "target": "all",
+            "features": {
+                "factoring": true,
+                "edi": true,
+                "cross_border": false
+            }
+        },
+        "optimal": {
+            "name": "Оптимальный",
+            "price_month": 20.00,
+            "price_year": 240.00,
+            "price_year_promo": 96.00,
+            "included": {
+                "waybills": 120,
+                "yuzdo": 120
+            },
+            "target": "new_only",
+            "features": {
+                "factoring": false,
+                "edi": "package_only",
+                "cross_border": "on_request"
+            }
+        },
+        "comfort": {
+            "name": "Комфортный",
+            "price_month": 30.00,
+            "price_year": 360.00,
+            "price_year_promo": 144.00,
+            "included": {
+                "waybills": 240,
+                "yuzdo": 240
+            },
+            "target": "all",
+            "features": {
+                "factoring": false,
+                "edi": "package_only",
+                "cross_border": "on_request"
+            }
+        },
+        "edial": {
+            "name": "EDIальный",
+            "price_month": 40.00,
+            "price_year": 480.00,
+            "price_year_promo": 288.00,
+            "included": {
+                "waybills": 0,
+                "yuzdo": 0
+            },
+            "target": "all",
+            "features": {
+                "factoring": true,
+                "edi": true,
+                "cross_border": true,
+                "combined_billing": true
+            }
+        },
+        "practical": {
+            "name": "ПрАКТичный",
+            "price_month": 0,
+            "price_year": 12.00,
+            "price_year_promo": 12.00,
+            "included": {
+                "incoming": "unlimited"
+            },
+            "target": "new_only",
+            "features": {
+                "outgoing": false,
+                "factoring": false,
+                "edi": false,
+                "cross_border": false
+            }
+        }
+    },
+    "document_packages": {
+        "edi": [
+            {
+                "amount": 50,
+                "price": 20.00
+            },
+            {
+                "amount": 100,
+                "price": 39.00
+            },
+            {
+                "amount": 500,
+                "price": 190.00
+            },
+            {
+                "amount": 1000,
+                "price": 350.00
+            }
+        ],
+        "waybills": [
+            {
+                "amount": 50,
+                "price": 20.00
+            },
+            {
+                "amount": 100,
+                "price": 39.00
+            },
+            {
+                "amount": 500,
+                "price": 190.00
+            },
+            {
+                "amount": 1000,
+                "price": 350.00
+            }
+        ],
+        "yuzdo": [
+            {
+                "amount": 50,
+                "price": 20.00
+            },
+            {
+                "amount": 100,
+                "price": 39.00
+            },
+            {
+                "amount": 500,
+                "price": 190.00
+            },
+            {
+                "amount": 1000,
+                "price": 350.00
+            }
+        ]
+    },
+    "piece_rate_brackets": [
+        {
+            "min": 1,
+            "max": 100,
+            "rates": {
+                "ettn": 0.39,
+                "etn": 0.39,
+                "yuzdo": 0.39,
+                "factoring": 0.39,
+                "edi": 0.39
+            }
+        },
+        {
+            "min": 101,
+            "max": 200,
+            "rates": {
+                "ettn": 0.28,
+                "etn": 0.28,
+                "yuzdo": 0.28,
+                "factoring": 0.28,
+                "edi": 0.28
+            }
+        },
+        {
+            "min": 201,
+            "max": 500,
+            "rates": {
+                "ettn": 0.22,
+                "etn": 0.22,
+                "yuzdo": 0.22,
+                "factoring": 0.22,
+                "edi": 0.22
+            }
+        },
+        {
+            "min": 501,
+            "max": 1000,
+            "rates": {
+                "ettn": 0.17,
+                "etn": 0.17,
+                "yuzdo": 0.17,
+                "factoring": 0.17,
+                "edi": 0.17
+            }
+        },
+        {
+            "min": 1001,
+            "max": 5000,
+            "rates": {
+                "ettn": 0.135,
+                "etn": 0.135,
+                "yuzdo": 0.068,
+                "factoring": 0.135,
+                "edi": 0.068
+            }
+        },
+        {
+            "min": 5001,
+            "max": 10000,
+            "rates": {
+                "ettn": 0.11,
+                "etn": 0.11,
+                "yuzdo": 0.034,
+                "factoring": 0.11,
+                "edi": 0.034
+            }
+        },
+        {
+            "min": 10001,
+            "max": 50000,
+            "rates": {
+                "ettn": 0.077,
+                "etn": 0.077,
+                "yuzdo": 0.017,
+                "factoring": 0.077,
+                "edi": 0.017
+            }
+        },
+        {
+            "min": 50001,
+            "max": 9999999,
+            "rates": {
+                "ettn": 0.045,
+                "etn": 0.045,
+                "yuzdo": 0.011,
+                "factoring": 0.045,
+                "edi": 0.011
+            }
+        }
+    ],
+    "cross_border_packages": {
+        "tedi": [
+            {
+                "amount": 50,
+                "price": 50.00
+            },
+            {
+                "amount": 100,
+                "price": 80.00
+            },
+            {
+                "amount": 500,
+                "price": 300.00
+            },
+            {
+                "amount": 1000,
+                "price": 500.00
+            }
+        ],
+        "tedo": [
+            {
+                "amount": 50,
+                "price": 70.00
+            },
+            {
+                "amount": 100,
+                "price": 120.00
+            },
+            {
+                "amount": 500,
+                "price": 550.00
+            },
+            {
+                "amount": 1000,
+                "price": 1000.00
+            }
+        ]
+    },
+    "additional_services": {
+        "support_setup_0_5h": {
+            "price": 40.00,
+            "unit": "0.5 нормо-часа",
+            "name": "Поддержка, сопровождение и настройка ПО"
+        },
+        "dev_mod_1h": {
+            "price": 112.00,
+            "unit": "1 нормо-час",
+            "name": "Проектирование, разработка, модификация ИС и ПО"
+        },
+        "setup_adaptation_1h": {
+            "price": 112.00,
+            "unit": "1 нормо-час",
+            "name": "Настройка (адаптация) ПО EDI-системы СТТ"
+        },
+        "support_exploitation_1h": {
+            "price": 112.00,
+            "unit": "1 нормо-час",
+            "name": "Поддержка, сопровождение, эксплуатация ИС и ПО"
+        },
+        "out_of_hours_1h": {
+            "price": 150.00,
+            "unit": "1 нормо-час",
+            "name": "Услуги вне рабочего времени"
+        },
+        "ws_hosting": {
+            "price": 7.00,
+            "unit": "1 WS в месяц",
+            "name": "Размещение веб-сервисов (WS) в облаке"
+        }
+    },
+    "mobile_id": {
+        "auth": {
+            "price": 0.04,
+            "unit": "1 аутентификация"
+        },
+        "sign": {
+            "price": 0.08,
+            "unit": "1 подписание"
+        }
+    },
+    "pro_features": {
+        "pro_web": {
+            "price": 25.00,
+            "unit": "в месяц за услугу"
+        },
+        "pro_company": {
+            "price": 10.00,
+            "unit": "в месяц за услугу"
+        },
+        "pro_mobile": {
+            "price": 10.00,
+            "unit": "в месяц за услугу"
+        },
+        "pro_borders": {
+            "price": 15.00,
+            "unit": "в месяц за услугу"
+        }
+    },
+    "tech_support": {
+        "basic": {
+            "price": 0,
+            "name": "Базовый"
+        },
+        "extended": {
+            "price": 600.00,
+            "name": "Расширенный"
+        },
+        "premium": {
+            "price": 2400.00,
+            "name": "Премиум"
+        }
+    }
+}
