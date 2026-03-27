@@ -179,8 +179,18 @@ function renderAddons() {
     const container = document.getElementById('addons-container');
     let html = '';
 
+    const createCategory = (title, content) => {
+        return `
+            <details class="addon-category">
+                <summary>${title}</summary>
+                <div class="addon-category-content">
+                    ${content}
+                </div>
+            </details>
+        `;
+    };
+
     // Tech Support
-    html += `<h3>Техническая поддержка</h3>`;
     let supportControls = '<div class="radio-switcher">';
     for (const [id, details] of Object.entries(state.tariffs.tech_support)) {
         supportControls += `
@@ -189,48 +199,52 @@ function renderAddons() {
         `;
     }
     supportControls += '</div>';
-    html += createAddonRow('Уровень поддержки', 'Абонентская плата в месяц', supportControls);
+    html += createCategory('Техническая поддержка', createAddonRow('Уровень поддержки', 'Абонентская плата в месяц', supportControls));
 
     // Cross Border
-    html += `<h3 style="margin-top:1rem;">Трансграничный ЭДО (Россия)</h3>`;
+    let cbHtml = '';
     ['tedi', 'tedo'].forEach(type => {
         let options = `<option value="0">Не выбрано</option>`;
         state.tariffs.cross_border_packages[type].forEach(pkg => {
-            options += `<option value="${pkg.amount}">Пакет ${pkg.amount} шт (${pkg.price} BYN)</option>`;
+            options += `<option value="${pkg.amount}" ${state.addons.cross_border[type] == pkg.amount ? 'selected' : ''}>Пакет ${pkg.amount} шт (${pkg.price} BYN)</option>`;
         });
         const selectId = `cross-border-${type}`;
-        html += createAddonRow(type === 'tedi' ? 'Входящие (TEDI)' : 'Исходящие (TEDO)', 'Пакеты сообщений в месяц', `<select id="${selectId}" onchange="updateAddonState('cross_border', '${type}', this.value)">${options}</select>`);
+        cbHtml += createAddonRow(type === 'tedi' ? 'Входящие (TEDI)' : 'Исходящие (TEDO)', 'Пакеты сообщений в месяц', `<select id="${selectId}" onchange="updateAddonState('cross_border', '${type}', this.value)">${options}</select>`);
     });
+    html += createCategory('Трансграничный ЭДО (Россия)', cbHtml);
 
     // Mobile ID
-    html += `<h3 style="margin-top:1rem;">Услуги Mobile ID</h3>`;
+    let midHtml = '';
     for (const [id, details] of Object.entries(state.tariffs.mobile_id)) {
-        html += createAddonRow(
+        midHtml += createAddonRow(
             id === 'auth' ? 'Аутентификация' : 'Подписание', 
             `${details.price} BYN за ${details.unit}`, 
-            `<input type="number" min="0" value="0" style="width:80px;" onchange="updateAddonState('mobile_id', '${id}', this.value)">`
+            `<input type="number" min="0" value="${state.addons.mobile_id[id] || 0}" style="width:80px;" onchange="updateAddonState('mobile_id', '${id}', this.value)">`
         );
     }
+    html += createCategory('Услуги Mobile ID', midHtml);
 
     // Pro Features
-    html += `<h3 style="margin-top:1rem;">Pro-функционал (подписка)</h3>`;
+    let proHtml = '';
     for (const [id, details] of Object.entries(state.tariffs.pro_features)) {
-        html += createAddonRow(
+        proHtml += createAddonRow(
             id.replace('pro_', 'PRO '), 
             `${details.price} BYN ${details.unit}`, 
-            `<input type="checkbox" style="width:20px;height:20px;" onchange="updateAddonState('pro_features', '${id}', this.checked ? 1 : 0)">`
+            `<input type="checkbox" style="width:20px;height:20px;" ${state.addons.pro_features[id] ? 'checked' : ''} onchange="updateAddonState('pro_features', '${id}', this.checked ? 1 : 0)">`
         );
     }
+    html += createCategory('Pro-функционал (подписка)', proHtml);
 
     // Additional Services
-    html += `<h3 style="margin-top:1rem;">Разовые и дополнительные услуги</h3>`;
+    let extraHtml = '';
     for (const [id, details] of Object.entries(state.tariffs.additional_services)) {
-        html += createAddonRow(
+        extraHtml += createAddonRow(
             details.name, 
             `${details.price} BYN за ${details.unit}`, 
-            `<input type="number" min="0" value="0" style="width:80px;" onchange="updateAddonState('additional_services', '${id}', this.value)">`
+            `<input type="number" min="0" value="${state.addons.additional_services[id] || 0}" style="width:80px;" onchange="updateAddonState('additional_services', '${id}', this.value)">`
         );
     }
+    html += createCategory('Разовые и дополнительные услуги', extraHtml);
 
     container.innerHTML = html;
 
