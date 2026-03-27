@@ -139,6 +139,8 @@ function renderPlans() {
         if(!isDisabled) {
             card.addEventListener('click', () => {
                 state.selectedPlan = id;
+                // Once user manually selects, we stop auto-selection? 
+                // Or maybe we keep recommending. Let's just update for now.
                 renderPlans();
                 updateCalculations();
             });
@@ -386,28 +388,141 @@ function updateCalculations() {
         }
     }
 
-    // Calculate final value
-    let grandTotal = 0;
-    if (state.period === 'year') {
-        // base plan is yearly + addons * 12 + one-time services
-        grandTotal = totalYearly + (totalMonthly * 12);
-        
-        // Let's modify breakdown prices visually to reflect x12 for monthly recurring items under yearly billing?
-        // Actually, users might get confused. Better to keep breakdown true to calculation: 
-        // Breakdown shows Monthly items, but at the end we multiply by 12.
-        // Let's explicitly add a line to breakdown if period == year
-        if (totalMonthly > 0) {
-             breakdown.push({ name: `<br><b>Ежемесячные услуги за ГОД (*12)</b>`, price: totalMonthly * 12 });
-        }
-    } else {
-        grandTotal = totalMonthly + totalYearly; // totalYearly acts as one-time here
-    }
+    // Calculate final value for EACH plan to find the best one
+    let bestPlanId = state.selectedPlan;
+    let minGrandTotal = Infinity;
     
+    const allPlansResults = {};
+
+    for (const planId in state.tariffs.base_plans) {
+        const p = state.tariffs.base_plans[planId];
+        // Skip plans that are not for existing clients if selected
+        if (p.target === 'new_only' && state.clientType === 'existing') continue;
+
+        let pTotalMonthly = 0;
+        let pTotalYearly = (state.period === 'year') ? p.price_year_promo : p.price_month;
+        
+        // Docs
+        for (const [docKey, docName] of Object.entries(docNames)) {
+            const inputAmount = state.docs[docKey] || 0;
+            const included = p.included[docKey] || 0;
+            const billable = Math.max(0, inputAmount - included);
+            if (billable > 0) {
+                pTotalMonthly += calculateOptimalDocCost(docKey, billable, inputAmount).cost;
+            }
+        }
+        
+        // Addons (common for all plans)
+        let addonsMonthly = 0;
+        let addonsYearly = 0;
+        
+        // Tech Support
+        if (state.addons.tech_support !== 'basic') {
+            addonsMonthly += state.tariffs.tech_support[state.addons.tech_support].price;
+        }
+        // Cross Border
+        for (const [type, amount] of Object.entries(state.addons.cross_border)) {
+            if (amount > 0) {
+                const pkg = state.tariffs.cross_border_packages[type].find(p => p.amount == amount);
+                if (pkg) addonsMonthly += pkg.price;
+            }
+        }
+        // Pro
+        for (const id in state.addons.pro_features) {
+            if (state.addons.pro_features[id] > 0) addonsMonthly += state.tariffs.pro_features[id].price;
+        }
+        // Mobile ID
+        for (const id in state.addons.mobile_id) {
+            if (state.addons.mobile_id[id] > 0) addonsMonthly += state.tariffs.mobile_id[id].price * state.addons.mobile_id[id];
+        }
+        // Extra Services
+        for (const id in state.addons.additional_services) {
+            if (state.addons.additional_services[id] > 0) addonsYearly += state.tariffs.additional_services[id].price * state.addons.additional_services[id];
+        }
+
+        let pGrandTotal = (state.period === 'year') ? (pTotalYearly + (addonsYearly) + (pTotalMonthly + addonsMonthly) * 12) : (pTotalYearly + addonsYearly + pTotalMonthly + addonsMonthly);
+        
+        allPlansResults[planId] = pGrandTotal;
+        if (pGrandTotal < minGrandTotal) {
+            minGrandTotal = pGrandTotal;
+            bestPlanId = planId;
+        }
+    }
+
+    // Auto-select best plan if it's different and user hasn't locked it?
+    // Let's just always recommend/auto-select for now as per logic.md
+    if (state.selectedPlan !== bestPlanId) {
+        state.selectedPlan = bestPlanId;
+        renderPlans(); // re-render to show active
+        return updateCalculations(); // restart with new plan
+    }
+
     // UI Update
-    document.getElementById('total-price').textContent = formatPrice(grandTotal);
+    const finalGrandTotal = allPlansResults[state.selectedPlan];
+    document.getElementById('total-price').textContent = formatPrice(finalGrandTotal);
     document.getElementById('price-notice').textContent = `за ${state.period === 'year' ? 'год' : 'месяц'}, без НДС`;
     
-    const breakdownHTML = breakdown.map(item => {
+    // Final Breakdown for the selected plan
+    const finalBreakdown = [];
+    const activePlan = state.tariffs.base_plans[state.selectedPlan];
+    const basePriceDetail = (state.period === 'year') ? activePlan.price_year_promo : activePlan.price_month;
+    finalBreakdown.push({ name: `Тариф "${activePlan.name}" (${state.period === 'year' ? 'Год' : 'Мес'})`, price: basePriceDetail });
+
+    let currentMonthlyAddons = 0;
+    for (const [docKey, docName] of Object.entries(docNames)) {
+        const inputAmount = state.docs[docKey] || 0;
+        const included = activePlan.included[docKey] || 0;
+        const billable = Math.max(0, inputAmount - included);
+        if (billable > 0) {
+            const opt = calculateOptimalDocCost(docKey, billable, inputAmount);
+            currentMonthlyAddons += opt.cost;
+            finalBreakdown.push({ name: `${docName} (сверх ${included}шт: ${opt.desc})`, price: opt.cost });
+        }
+    }
+
+    // Other Monthly Addons
+    if (state.addons.tech_support !== 'basic') {
+        const p = state.tariffs.tech_support[state.addons.tech_support].price;
+        currentMonthlyAddons += p;
+        finalBreakdown.push({ name: `Поддержка: ${state.tariffs.tech_support[state.addons.tech_support].name}`, price: p });
+    }
+    // ... (rest of addons logic for the final list)
+    // For brevity, let's just combine the rest
+    for (const cat of ['cross_border', 'pro_features', 'mobile_id']) {
+        for (const id in state.addons[cat]) {
+            if (state.addons[cat][id] > 0) {
+                let p = 0;
+                let n = '';
+                if(cat === 'pro_features') { p = state.tariffs[cat][id].price; n = id.replace('pro_', 'PRO '); }
+                if(cat === 'cross_border') { 
+                    const pkg = state.tariffs.cross_border_packages[id].find(x => x.amount == state.addons[cat][id]);
+                    p = pkg ? pkg.price : 0; n = `Пакет ${id.toUpperCase()} ${state.addons[cat][id]}шт`;
+                }
+                if(cat === 'mobile_id') { p = state.tariffs[cat][id].price * state.addons[cat][id]; n = `Mobile ID: ${id} x${state.addons[cat][id]}`; }
+                
+                if (p > 0) {
+                    currentMonthlyAddons += p;
+                    finalBreakdown.push({ name: n, price: p });
+                }
+            }
+        }
+    }
+
+    // One-time
+    let oneTimeTotal = 0;
+    for (const id in state.addons.additional_services) {
+        if (state.addons.additional_services[id] > 0) {
+            const p = state.tariffs.additional_services[id].price * state.addons.additional_services[id];
+            oneTimeTotal += p;
+            finalBreakdown.push({ name: `Доп. услуга: ${state.tariffs.additional_services[id].name}`, price: p });
+        }
+    }
+
+    if (state.period === 'year' && currentMonthlyAddons > 0) {
+         finalBreakdown.push({ name: `<br><b>Ежемесячные услуги за ГОД (*12)</b>`, price: currentMonthlyAddons * 12 });
+    }
+
+    const breakdownHTML = finalBreakdown.map(item => {
         if (item.name.includes('<br>')) {
            return `<div class="item" style="border-top:2px solid #e2e8f0; margin-top:10px;"><span class="item-name">${item.name}</span><span class="item-price">${formatPrice(item.price)} BYN</span></div>`;
         }
