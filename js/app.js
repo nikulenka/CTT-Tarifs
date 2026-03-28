@@ -16,6 +16,7 @@ const state = {
         tech_support: 'basic'
     }
 };
+window.state = state;
 
 const formatPrice = (price) => parseFloat(price).toFixed(2);
 
@@ -53,9 +54,15 @@ async function initApp() {
             throw new Error("Неверная структура JSON: отсутствует поле base_plans.");
         }
 
-        document.getElementById('loading').classList.add('hidden');
-        document.getElementById('app').classList.remove('hidden');
-        document.getElementById('vat-notice').textContent = state.tariffs.meta.vat_notice;
+        const loadingEl = document.getElementById('loading');
+        const appEl = document.getElementById('app');
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (appEl) appEl.classList.remove('hidden');
+        
+        const vatNoticeEl = document.getElementById('vat-notice');
+        if (vatNoticeEl && state.tariffs.meta) {
+            vatNoticeEl.textContent = state.tariffs.meta.vat_notice;
+        }
         
         setupEventListeners();
         renderPlans();
@@ -100,17 +107,18 @@ function setupEventListeners() {
         const sync = (val) => {
             val = parseInt(val) || 0;
             if(val > 1000000) val = 1000000;
-            slider.value = Math.min(val, 5000); 
-            input.value = val;
+            if (slider) slider.value = Math.min(val, 5000); 
+            if (input) input.value = val;
             state.docs[docType] = val;
             updateCalculations();
         };
 
-        slider.addEventListener('input', (e) => sync(e.target.value));
-        input.addEventListener('input', (e) => sync(e.target.value));
+        if (slider) slider.addEventListener('input', (e) => sync(e.target.value));
+        if (input) input.addEventListener('input', (e) => sync(e.target.value));
     });
     
-    document.getElementById('btn-export').addEventListener('click', generatePDF);
+    const btnExport = document.getElementById('btn-export');
+    if (btnExport) btnExport.addEventListener('click', generatePDF);
 }
 
 function validatePlanSelection() {
@@ -262,58 +270,79 @@ window.updateAddonState = function(category, key, value) {
     updateCalculations();
 }
 
-function calculateOptimalDocCost(docType, amount, totalAmountForTier) {
-    if (amount <= 0) return { cost: 0, desc: '' };
+function calculateOptimalDocCost(docType, totalIn, included) {
+    if (totalIn <= included) return { cost: 0, desc: 'включено' };
 
+    const amount = totalIn - included;
     const packages = state.tariffs.document_packages[docType] || [];
     const brackets = state.tariffs.piece_rate_brackets;
     let rateKey = docType === 'waybills' ? 'ettn' : docType;
 
-    // Helper: Progressive piece rate calculation
-    const getPiecesCost = (qty) => {
-        if (qty <= 0) return 0;
-        let cost = 0;
-        let remaining = qty;
+    // Helper: Progressive piece rate calculation for a SPECIFIC RANGE [start, end]
+    const getPiecesCostRange = (start, end) => {
+        if (end <= start) return 0;
         
-        for (const bracket of brackets) {
-            const bracketSize = bracket.max - bracket.min + 1;
-            const applicable = Math.min(remaining, bracketSize);
-            const rate = bracket.rates[rateKey] || 0;
-            
-            cost += applicable * rate;
-            remaining -= applicable;
-            if (remaining <= 0) break;
-        }
-        
-        // Handle overflow if any
-        if (remaining > 0) {
-            const lastRate = brackets[brackets.length - 1].rates[rateKey] || 0;
-            cost += remaining * lastRate;
-        }
-        return cost;
+        const getFullCost = (qty) => {
+            if (qty <= 0) return 0;
+            let cost = 0;
+            let remaining = qty;
+            for (const bracket of brackets) {
+                const bracketMax = bracket.max === null ? Infinity : bracket.max;
+                const bracketSize = bracketMax === Infinity ? Infinity : (bracketMax - bracket.min + 1);
+                const applicable = Math.min(remaining, bracketSize);
+                cost += applicable * (bracket.rates[rateKey] || 0);
+                remaining -= applicable;
+                if (remaining <= 0) break;
+            }
+            if (remaining > 0) {
+                cost += remaining * (brackets[brackets.length - 1].rates[rateKey] || 0);
+            }
+            return cost;
+        };
+
+        return getFullCost(end) - getFullCost(start);
     };
 
-    // Optimization logic: Try all package combinations
-    // Since packages are small in count, we can do a simple recursive or iterative approach
-    const sortedPkgs = [...packages].sort((a, b) => b.amount - a.amount);
-    
-    let bestResult = { cost: getPiecesCost(amount), desc: `${amount} шт (поштучно)` };
+    // 1. Just piece rate for the excess
+    let bestResult = { 
+        cost: getPiecesCostRange(included, totalIn), 
+        desc: `${amount} шт (поштучно)` 
+    };
 
-    // Simple combinations: try taking N of each package
-    // For performance, we limit to reasonable counts
-    for (const pkg of sortedPkgs) {
-        // Option: Take one or more of this package
-        for (let count = 1; count <= Math.ceil(amount / pkg.amount); count++) {
-            let pkgTotalAmt = count * pkg.amount;
-            let pkgTotalCost = count * pkg.price;
-            let remaining = Math.max(0, amount - pkgTotalAmt);
-            let total = pkgTotalCost + getPiecesCost(remaining);
-            
-            if (total < bestResult.cost) {
-                bestResult = {
-                    cost: total,
-                    desc: `${count}x${pkg.amount}шт + ${remaining} поштучно`
-                };
+    // 2. Try packages
+    // A package covers docs from [included+1] to [included+pkg.amount]
+    for (const pkg of packages) {
+        // Option A: 1 package + remaining
+        const pkgAmt = pkg.amount;
+        const coveredTo = included + pkgAmt;
+        let total = pkg.price;
+        let desc = `пакет ${pkgAmt} шт`;
+        
+        if (coveredTo < totalIn) {
+            const extra = totalIn - coveredTo;
+            total += getPiecesCostRange(coveredTo, totalIn);
+            desc += ` + ${extra} шт`;
+        }
+        
+        if (total < bestResult.cost) {
+            bestResult = { cost: total, desc: desc };
+        }
+
+        // Option B: Multiple packages? (Rare but possible)
+        for (let n = 2; n <= Math.ceil(amount / pkgAmt); n++) {
+            let nPkgAmt = n * pkgAmt;
+            let nPkgCoveredTo = included + nPkgAmt;
+            let nTotal = n * pkg.price;
+            let nDesc = `${n}x${pkgAmt}шт`;
+
+            if (nPkgCoveredTo < totalIn) {
+                const extra = totalIn - nPkgCoveredTo;
+                nTotal += getPiecesCostRange(nPkgCoveredTo, totalIn);
+                nDesc += ` + ${extra} шт`;
+            }
+
+            if (nTotal < bestResult.cost) {
+                bestResult = { cost: nTotal, desc: nDesc };
             }
         }
     }
@@ -322,197 +351,110 @@ function calculateOptimalDocCost(docType, amount, totalAmountForTier) {
 }
 
 function updateCalculations() {
-    const breakdown = [];
-    let totalMonthly = 0; 
-    let totalYearly = 0; 
-
-    // 1. Base Plan
-    const plan = state.tariffs.base_plans[state.selectedPlan];
-    if (state.period === 'year') {
-        totalYearly += plan.price_year_promo;
-        breakdown.push({ name: `Тариф "${plan.name}" (Год)`, price: plan.price_year_promo });
-    } else {
-        totalMonthly += plan.price_month;
-        breakdown.push({ name: `Тариф "${plan.name}" (Мес)`, price: plan.price_month });
-    }
-
-    // 2. Docs (Monthly cost)
+    console.log("Updating calculations...");
+    const multiplier = state.period === 'year' ? 12 : 1;
     const docNames = { waybills: 'Эл. накладные', edi: 'EDI-сообщения', yuzdo: 'ЮЗДО' };
-    for (const [docKey, docName] of Object.entries(docNames)) {
-        const inputAmount = state.docs[docKey] || 0;
-        if (inputAmount === 0) continue;
-        
-        const included = plan.included[docKey] || 0;
-        let billableAmount = Math.max(0, inputAmount - included);
-        
-        if (billableAmount > 0) {
-            const opt = calculateOptimalDocCost(docKey, billableAmount, inputAmount);
-            if (opt.cost > 0) {
-                totalMonthly += opt.cost;
-                breakdown.push({ name: `${docName} (${opt.desc})`, price: opt.cost });
-            }
-        }
-    }
 
-    // 3. Tech Support (Monthly)
-    if (state.addons.tech_support && state.addons.tech_support !== 'basic') {
-        const tsPrice = state.tariffs.tech_support[state.addons.tech_support].price;
-        if (tsPrice > 0) {
-            totalMonthly += tsPrice;
-            breakdown.push({ name: `Поддержка: ${state.tariffs.tech_support[state.addons.tech_support].name}`, price: tsPrice });
-        }
-    }
-
-    // 4. Cross Border (Monthly)
-    for (const [type, amount] of Object.entries(state.addons.cross_border)) {
-        if (amount > 0) {
-            const pkg = state.tariffs.cross_border_packages[type].find(p => p.amount == amount);
-            if (pkg) {
-                totalMonthly += pkg.price;
-                breakdown.push({ name: `Пакет ${type.toUpperCase()} ${amount}шт`, price: pkg.price });
-            }
-        }
-    }
-
-    // 5. Pro Features (Monthly)
-    for (const [id, count] of Object.entries(state.addons.pro_features)) {
-        if (count > 0) {
-            const price = state.tariffs.pro_features[id].price;
-            totalMonthly += price;
-            breakdown.push({ name: `Опция ${id.replace('pro_', 'PRO ')}`, price: price });
-        }
-    }
-
-    // 6. Mobile ID (Monthly)
-    for (const [id, count] of Object.entries(state.addons.mobile_id)) {
-        if (count > 0) {
-            const price = state.tariffs.mobile_id[id].price * count;
-            totalMonthly += price;
-            breakdown.push({ name: `Mobile ID: ${id} x${count}`, price: price });
-        }
-    }
-
-    // 7. Additional Services (One-time, added strictly to total like yearly)
-    // Wait, let's treat them as one-time fees added to the current period Grand Total
-    for (const [id, count] of Object.entries(state.addons.additional_services)) {
-        if (count > 0) {
-            const price = state.tariffs.additional_services[id].price * count;
-            totalYearly += price; // adding to yearly so it doesn't get x12 if period='year'. it's a one time fee basically.
-            breakdown.push({ name: `Доп. услуга: ${state.tariffs.additional_services[id].name}`, price: price });
-        }
-    }
-
-    // Calculate final value for EACH plan to find the best one
+    // 1. FIND BEST PLAN FIRST (Auto-recommendation)
     let bestPlanId = state.selectedPlan;
     let minGrandTotal = Infinity;
     
-    const allPlansResults = {};
-
-    for (const planId in state.tariffs.base_plans) {
-        const p = state.tariffs.base_plans[planId];
-        // Skip plans that are not for existing clients if selected
+    for (const pId in state.tariffs.base_plans) {
+        const p = state.tariffs.base_plans[pId];
         if (p.target === 'new_only' && state.clientType === 'existing') continue;
 
-        let pTotalMonthly = 0;
-        let pTotalYearly = (state.period === 'year') ? p.price_year_promo : p.price_month;
-        
-        // Docs
-        for (const [docKey, docName] of Object.entries(docNames)) {
-            const inputAmount = state.docs[docKey] || 0;
-            const included = p.included[docKey] || 0;
-            const billable = Math.max(0, inputAmount - included);
-            if (billable > 0) {
-                pTotalMonthly += calculateOptimalDocCost(docKey, billable, inputAmount).cost;
+        // FEATURE CHECKS: Skip plans that don't support the documents the user wants to send
+        if (state.docs.waybills > 0 && p.features.outgoing === false) continue;
+        if (state.docs.edi > 0 && p.features.edi === false) continue;
+
+        let pBase = p.price_month;
+        if (state.period === 'year') {
+            pBase = (state.clientType === 'new') ? p.price_year_promo : p.price_year;
+        }
+        let pDocsMonth = 0;
+        for (const dk in docNames) {
+            const inAmt = state.docs[dk] || 0;
+            const inc = (p.included[dk] || 0) / 12;
+            if (inAmt > inc) pDocsMonth += calculateOptimalDocCost(dk, inAmt, inc).cost;
+        }
+
+        let pAddonsMonth = 0;
+        if (state.addons.tech_support !== 'basic') pAddonsMonth += state.tariffs.tech_support[state.addons.tech_support].price;
+        for (const type in state.addons.cross_border) {
+            const amt = state.addons.cross_border[type];
+            if (amt > 0) {
+                const pkg = state.tariffs.cross_border_packages[type].find(x => x.amount == amt);
+                if (pkg) pAddonsMonth += pkg.price;
             }
         }
-        
-        // Addons (common for all plans)
-        let addonsMonthly = 0;
-        let addonsYearly = 0;
-        
-        // Tech Support
-        if (state.addons.tech_support !== 'basic') {
-            addonsMonthly += state.tariffs.tech_support[state.addons.tech_support].price;
-        }
-        // Cross Border
-        for (const [type, amount] of Object.entries(state.addons.cross_border)) {
-            if (amount > 0) {
-                const pkg = state.tariffs.cross_border_packages[type].find(p => p.amount == amount);
-                if (pkg) addonsMonthly += pkg.price;
-            }
-        }
-        // Pro
-        for (const id in state.addons.pro_features) {
-            if (state.addons.pro_features[id] > 0) addonsMonthly += state.tariffs.pro_features[id].price;
-        }
-        // Mobile ID
-        for (const id in state.addons.mobile_id) {
-            if (state.addons.mobile_id[id] > 0) addonsMonthly += state.tariffs.mobile_id[id].price * state.addons.mobile_id[id];
-        }
-        // Extra Services
+        for (const id in state.addons.pro_features) if (state.addons.pro_features[id] > 0) pAddonsMonth += state.tariffs.pro_features[id].price;
+        for (const id in state.addons.mobile_id) if (state.addons.mobile_id[id] > 0) pAddonsMonth += state.tariffs.mobile_id[id].price * state.addons.mobile_id[id];
+
+        let pOneTime = 0;
         for (const id in state.addons.additional_services) {
-            if (state.addons.additional_services[id] > 0) addonsYearly += state.tariffs.additional_services[id].price * state.addons.additional_services[id];
+            if (state.addons.additional_services[id] > 0) pOneTime += state.tariffs.additional_services[id].price * state.addons.additional_services[id];
         }
 
-        let pGrandTotal = (state.period === 'year') ? (pTotalYearly + (addonsYearly) + (pTotalMonthly + addonsMonthly) * 12) : (pTotalYearly + addonsYearly + pTotalMonthly + addonsMonthly);
-        
-        allPlansResults[planId] = pGrandTotal;
-        if (pGrandTotal < minGrandTotal) {
-            minGrandTotal = pGrandTotal;
-            bestPlanId = planId;
+        let grand = pBase + (pDocsMonth + pAddonsMonth) * multiplier + pOneTime;
+        // Float precision safety
+        if (grand < minGrandTotal - 0.01) {
+            minGrandTotal = grand;
+            bestPlanId = pId;
         }
     }
 
-    // Auto-select best plan if it's different and user hasn't locked it?
-    // Let's just always recommend/auto-select for now as per logic.md
-    if (state.selectedPlan !== bestPlanId) {
+    if (bestPlanId !== state.selectedPlan) {
+        console.log(`Auto-switching to better plan: ${bestPlanId}`);
         state.selectedPlan = bestPlanId;
-        renderPlans(); // re-render to show active
-        return updateCalculations(); // restart with new plan
+        renderPlans();
+        // Calculate one more time for the final breakdown of the NEW plan
+        // To avoid infinite loop, we call a simplified version or just return here
+        // Actually, since we already found the 'absolute' best plan in the loop above,
+        // we can just re-run calculation once.
+        updateCalculationsInternal(); 
+        return;
     }
 
-    // UI Update
-    const finalGrandTotal = allPlansResults[state.selectedPlan];
-    document.getElementById('total-price').textContent = formatPrice(finalGrandTotal);
-    document.getElementById('price-notice').textContent = `за ${state.period === 'year' ? 'год' : 'месяц'}, без НДС`;
-    
-    // Final Breakdown for the selected plan
-    const finalBreakdown = [];
+    updateCalculationsInternal();
+}
+
+function updateCalculationsInternal() {
     const activePlan = state.tariffs.base_plans[state.selectedPlan];
-    const basePriceDetail = (state.period === 'year') ? activePlan.price_year_promo : activePlan.price_month;
-    finalBreakdown.push({ name: `Тариф "${activePlan.name}" (${state.period === 'year' ? 'Год' : 'Мес'})`, price: basePriceDetail });
+    const finalBreakdown = [];
+    const docNames = { waybills: 'Эл. накладные', edi: 'EDI-сообщения', yuzdo: 'ЮЗДО' };
+    const multiplier = state.period === 'year' ? 12 : 1;
+    const basePrice = (state.period === 'year') ? ((state.clientType === 'new') ? activePlan.price_year_promo : activePlan.price_year) : activePlan.price_month;
+    finalBreakdown.push({ name: `Тариф "${activePlan.name}" (${state.period === 'year' ? 'Год' : 'Мес'})`, price: basePrice });
 
     let currentMonthlyAddons = 0;
     for (const [docKey, docName] of Object.entries(docNames)) {
         const inputAmount = state.docs[docKey] || 0;
-        const included = activePlan.included[docKey] || 0;
-        const billable = Math.max(0, inputAmount - included);
-        if (billable > 0) {
-            const opt = calculateOptimalDocCost(docKey, billable, inputAmount);
+        const included = (activePlan.included[docKey] || 0) / 12;
+        if (inputAmount > included) {
+            const opt = calculateOptimalDocCost(docKey, inputAmount, included);
             currentMonthlyAddons += opt.cost;
-            finalBreakdown.push({ name: `${docName} (сверх ${included}шт: ${opt.desc})`, price: opt.cost });
+            finalBreakdown.push({ name: `${docName} (${opt.desc})`, price: opt.cost });
         }
     }
 
-    // Other Monthly Addons
     if (state.addons.tech_support !== 'basic') {
         const p = state.tariffs.tech_support[state.addons.tech_support].price;
         currentMonthlyAddons += p;
         finalBreakdown.push({ name: `Поддержка: ${state.tariffs.tech_support[state.addons.tech_support].name}`, price: p });
     }
-    // ... (rest of addons logic for the final list)
-    // For brevity, let's just combine the rest
+
+    // Combine other monthly addons
     for (const cat of ['cross_border', 'pro_features', 'mobile_id']) {
         for (const id in state.addons[cat]) {
-            if (state.addons[cat][id] > 0) {
-                let p = 0;
-                let n = '';
-                if(cat === 'pro_features') { p = state.tariffs[cat][id].price; n = id.replace('pro_', 'PRO '); }
+            const val = state.addons[cat][id];
+            if (val > 0) {
+                let p = 0; let n = '';
+                if(cat === 'pro_features') { p = state.tariffs[cat][id].price; n = `Опция ${id.replace('pro_', 'PRO ')}`; }
                 if(cat === 'cross_border') { 
-                    const pkg = state.tariffs.cross_border_packages[id].find(x => x.amount == state.addons[cat][id]);
-                    p = pkg ? pkg.price : 0; n = `Пакет ${id.toUpperCase()} ${state.addons[cat][id]}шт`;
+                    const pkg = state.tariffs.cross_border_packages[id].find(x => x.amount == val);
+                    p = pkg ? pkg.price : 0; n = `Пакет ${id.toUpperCase()} ${val}шт`;
                 }
-                if(cat === 'mobile_id') { p = state.tariffs[cat][id].price * state.addons[cat][id]; n = `Mobile ID: ${id} x${state.addons[cat][id]}`; }
+                if(cat === 'mobile_id') { p = state.tariffs[cat][id].price * val; n = `Mobile ID: ${id} x${val}`; }
                 
                 if (p > 0) {
                     currentMonthlyAddons += p;
@@ -522,23 +464,32 @@ function updateCalculations() {
         }
     }
 
-    // One-time
     let oneTimeTotal = 0;
     for (const id in state.addons.additional_services) {
-        if (state.addons.additional_services[id] > 0) {
-            const p = state.tariffs.additional_services[id].price * state.addons.additional_services[id];
+        const count = state.addons.additional_services[id];
+        if (count > 0) {
+            const p = state.tariffs.additional_services[id].price * count;
             oneTimeTotal += p;
             finalBreakdown.push({ name: `Доп. услуга: ${state.tariffs.additional_services[id].name}`, price: p });
         }
     }
 
     if (state.period === 'year' && currentMonthlyAddons > 0) {
-         finalBreakdown.push({ name: `<br><b>Ежемесячные услуги за ГОД (*12)</b>`, price: currentMonthlyAddons * 12 });
+         finalBreakdown.push({ name: `<br><b>Дополнительные услуги за ГОД (*12)</b>`, price: currentMonthlyAddons * 12 });
     }
 
+    const finalGrandTotal = basePrice + (currentMonthlyAddons * multiplier) + oneTimeTotal;
+    
+    // 3. UI UPDATE
+    document.getElementById('total-price').textContent = formatPrice(finalGrandTotal);
+    document.getElementById('price-notice').textContent = `за ${state.period === 'year' ? 'год' : 'месяц'}, без НДС`;
+    
     const breakdownHTML = finalBreakdown.map(item => {
         if (item.name.includes('<br>')) {
-           return `<div class="item" style="border-top:2px solid #e2e8f0; margin-top:10px;"><span class="item-name">${item.name}</span><span class="item-price">${formatPrice(item.price)} BYN</span></div>`;
+           return `<div class="item" style="border-top:1px dashed rgba(255,255,255,0.2); margin-top:10px; padding-top:10px;">
+                    <span class="item-name">${item.name}</span>
+                    <span class="item-price">${formatPrice(item.price)} BYN</span>
+                   </div>`;
         }
         return `<div class="item"><span class="item-name">${item.name}</span><span class="item-price">${formatPrice(item.price)} BYN</span></div>`;
     }).join('');

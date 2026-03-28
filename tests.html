@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>CTT Tariff Tester - Ultimate Edition</title>
+    <style>
+        body { font-family: 'Inter', sans-serif; padding: 40px; line-height: 1.6; max-width: 1100px; margin: 0 auto; background: #0f172a; color: #f8fafc; }
+        .test-case { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 20px; margin-bottom: 15px; border-radius: 12px; backdrop-filter: blur(10px); }
+        .pass { border-left: 5px solid #22c55e; }
+        .fail { border-left: 5px solid #ef4444; }
+        .pass strong { color: #4ade80; }
+        .fail strong { color: #f87171; }
+        .summary { font-size: 1.8rem; font-weight: 700; margin-bottom: 30px; padding: 25px; border-radius: 16px; text-align: center; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .summary.all-pass { background: linear-gradient(135deg, #166534 0%, #15803d 100%); color: #f0fdf4; }
+        .summary.some-fail { background: linear-gradient(135deg, #991b1b 0%, #b91c1c 100%); color: #fef2f2; }
+        .details { font-family: monospace; font-size: 0.9rem; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px; margin-top: 10px; color: #94a3b8; }
+        .progress-bar { height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; margin-bottom: 20px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #3b82f6; transition: width 0.3s ease; }
+    </style>
+</head>
+<body>
+    <h1>Проверка алгоритма расчета CTT.BY (9 Тестов)</h1>
+    <div class="progress-bar"><div id="progress" class="progress-fill" style="width: 0%"></div></div>
+    <div id="summary" class="summary">Инициализация тестов...</div>
+    <div id="results"></div>
+
+    <!-- Hidden app structure to satisfy app.js selectors -->
+    <div id="app" style="display:none;">
+        <div id="total-price">0</div>
+        <div id="breakdown-list"></div>
+        <div id="plans-container"></div>
+        <div id="addons-container"></div>
+        <div id="price-notice"></div>
+        <button id="btn-export"></button>
+        <div id="slider-waybills"></div><input id="input-waybills">
+        <div id="slider-edi"></div><input id="input-edi">
+        <div id="slider-yuzdo"></div><input id="input-yuzdo">
+    </div>
+
+    <script src="js/app.js?v=2.1"></script>
+    <script>
+        // Mock UI functions to prevent DOM errors
+        window.renderPlans = () => { console.log("Mock renderPlans"); };
+        window.renderAddons = () => { console.log("Mock renderAddons"); };
+
+        const testCases = [
+            {
+                id: 1,
+                name: "Базовый сценарий (0 док, Год) -> ПрАКТичный",
+                input: { period: 'year', clientType: 'new', docs: { waybills: 0 } },
+                expected: 12.00
+            },
+            {
+                id: 2,
+                name: "Лимит Оптимального (10 док/мес = 120/год)",
+                input: { period: 'year', clientType: 'new', docs: { waybills: 10 } },
+                expected: 96.00 
+            },
+            {
+                id: 3,
+                name: "Средний объем (250 док/мес) -> Рекомендация Оптимального",
+                input: { period: 'year', clientType: 'new', docs: { waybills: 250 } },
+                expected: 985.20
+            },
+            {
+                id: 4,
+                name: "Большой объем (1000 док/мес) -> Прогрессивная сетка",
+                input: { period: 'year', clientType: 'new', docs: { waybills: 1000 } },
+                expected: 2665.20
+            },
+            {
+                id: 5,
+                name: "Mobile ID (100 подписей, Месяц) -> ПрАКТичный + Доп",
+                input: { period: 'month', clientType: 'new', docs: { waybills: 0 }, addons: { mobile_id: { sign: 100 } } },
+                expected: 8.00
+            },
+            {
+                id: 6,
+                name: "PRO-подписка (1 фича, Год) -> ПрАКТичный + 25*12",
+                input: { period: 'year', clientType: 'new', docs: { waybills: 0 }, addons: { pro_features: { pro_web: 1 } } },
+                expected: 312.00
+            },
+            {
+                id: 7,
+                name: "Кросс-бордер (Пакет 50 TEDI, Месяц) -> Пакет 50.00",
+                input: { period: 'month', clientType: 'new', docs: { waybills: 0 }, addons: { cross_border: { tedi: 50 } } },
+                expected: 50.00
+            },
+            {
+                id: 8,
+                name: "Существующий клиент (Оптимальный недоступен) -> Базовый",
+                input: { period: 'year', clientType: 'existing', docs: { waybills: 0 } },
+                expected: 350.00
+            },
+            {
+                id: 9,
+                name: "Разовые услуги (Настройка 112.00) + ПрАКТичный (Год 12.00)",
+                input: { period: 'year', clientType: 'new', docs: { waybills: 0 }, addons: { additional_services: { setup_adaptation_1h: 1 } } },
+                expected: 124.00
+            }
+        ];
+
+        async function runTests() {
+            console.log("Starting test sequence...");
+            while (!window.state || !window.state.tariffs) {
+                await new Promise(r => setTimeout(r, 100));
+            }
+
+            const resultsContainer = document.getElementById('results');
+            let passed = 0;
+
+            for (let i = 0; i < testCases.length; i++) {
+                const tc = testCases[i];
+                console.log(`Executing Test ${tc.id}: ${tc.name}`);
+                
+                // Reset to clean state
+                state.addons = JSON.parse(JSON.stringify(window.initialAddonsState || {
+                    tech_support: 'basic',
+                    cross_border: { tedi: 0, tedo: 0 },
+                    mobile_id: { auth: 0, sign: 0 },
+                    pro_features: { pro_subscription: 0, pro_company: 0, pro_mobile: 0, pro_integration: 0 },
+                    additional_services: { setup: 0, consult: 0, training: 0 }
+                }));
+                state.period = tc.input.period;
+                state.clientType = tc.input.clientType;
+                state.docs = { waybills: 0, edi: 0, yuzdo: 0, ...tc.input.docs };
+                state.selectedPlan = 'basic'; // Force reset to check auto-switch
+                
+                if (tc.input.addons) {
+                    for (const cat in tc.input.addons) {
+                        for (const key in tc.input.addons[cat]) {
+                            state.addons[cat][key] = tc.input.addons[cat][key];
+                        }
+                    }
+                }
+
+                // Execute calculation
+                updateCalculations();
+                
+                const actualVal = parseFloat(document.getElementById('total-price').innerText.replace(/\s/g, '').replace(',', '.'));
+                const isPass = Math.abs(actualVal - tc.expected) < 0.1;
+
+                if (isPass) passed++;
+
+                const div = document.createElement('div');
+                div.className = `test-case ${isPass ? 'pass' : 'fail'}`;
+                div.innerHTML = `
+                    <strong>Тест ${tc.id}: ${tc.name}</strong><br>
+                    <div class="details">
+                        Вход: ${JSON.stringify(tc.input)}<br>
+                        Выбранный план: ${state.selectedPlan}<br>
+                        Ожидалось: ${tc.expected.toFixed(2)}, Получено: ${actualVal.toFixed(2)}
+                    </div>
+                    <span>Статус: ${isPass ? '✅ ПРОЙДЕНО' : '❌ ОШИБКА'}</span>
+                `;
+                resultsContainer.appendChild(div);
+                
+                // Update progress
+                document.getElementById('progress').style.width = `${((i + 1) / testCases.length) * 100}%`;
+                
+                // Yield to event loop
+                await new Promise(r => setTimeout(r, 50));
+            }
+
+            const summaryEl = document.getElementById('summary');
+            summaryEl.innerText = `Пройдено ${passed} из ${testCases.length} тестов.`;
+            summaryEl.className = `summary ${passed === testCases.length ? 'all-pass' : 'some-fail'}`;
+            console.log("Test sequence complete.");
+        }
+
+        runTests();
+    </script>
+</body>
+</html>
